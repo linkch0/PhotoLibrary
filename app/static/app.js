@@ -25,6 +25,20 @@ const state = {
 
 const PAGE = 300;
 
+/**
+ * Media URLs carry the library token. Asset ids are per-library database keys,
+ * so id 846 is a different photo in a different library - without the token the
+ * browser's immutable cache would keep serving the previous library's images
+ * after a switch.
+ */
+function mediaUrl(kind, id, extra) {
+  const parts = [];
+  if (extra) parts.push(extra);
+  if (state.lib && state.lib.token) parts.push(`lib=${state.lib.token}`);
+  const q = parts.length ? `?${parts.join('&')}` : '';
+  return `/api/${kind}/${id}${q}`;
+}
+
 /* ------------------------------------------------------------- helpers */
 
 async function api(path, opts) {
@@ -358,7 +372,7 @@ function appendTiles(items, startIndex) {
     img.loading = 'lazy';
     img.decoding = 'async';
     img.alt = it.name || '';
-    img.src = `/api/thumb/${it.id}?size=${state.size}`;
+    img.src = mediaUrl('thumb', it.id, `size=${state.size}`);
     img.addEventListener('load', () => img.classList.add('loaded'), { once: true });
     img.addEventListener('error', () => img.classList.add('loaded'), { once: true });
     tile.appendChild(img);
@@ -424,14 +438,14 @@ async function renderViewer() {
 
   if (it.kind === 'video') {
     const v = document.createElement('video');
-    v.src = `/api/video/${it.id}`;
+    v.src = mediaUrl("video", it.id);
     v.controls = true;
     v.autoplay = true;
     v.playsInline = true;
     stage.appendChild(v);
   } else {
     const img = document.createElement('img');
-    img.src = `/api/preview/${it.id}`;
+    img.src = mediaUrl('preview', it.id);
     img.alt = it.name || '';
     stage.appendChild(img);
 
@@ -440,7 +454,7 @@ async function renderViewer() {
       btn.addEventListener('click', () => {
         stage.innerHTML = '';
         const v = document.createElement('video');
-        v.src = `/api/video/${it.id}`;
+        v.src = mediaUrl("video", it.id);
         v.controls = true;
         v.autoplay = true;
         v.loop = true;
@@ -512,13 +526,13 @@ function renderInfo(d) {
 
   const actions = el('div', 'actions');
   const open = el('a', null, 'Open original');
-  open.href = `/api/original/${d.id}`;
+  open.href = mediaUrl("original", d.id);
   open.target = '_blank';
   open.rel = 'noreferrer';
   actions.appendChild(open);
 
   const dlBtn = el('a', null, 'Download original');
-  dlBtn.href = `/api/original/${d.id}?download=true`;
+  dlBtn.href = mediaUrl("original", d.id, "download=true");
   actions.appendChild(dlBtn);
 
   if (d.path) {

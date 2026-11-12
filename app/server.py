@@ -38,6 +38,19 @@ def get_library() -> PhotosLibrary:
     return _lib
 
 
+def _library_token(lib: PhotosLibrary) -> str:
+    """Short stable hash of the library identity.
+
+    Asset ids are per-library database primary keys, so ``/api/thumb/846`` means
+    different photos in different libraries. Media is served with a long-lived
+    immutable cache, so the token is what forces the browser to fetch the right
+    bytes after a switch instead of reusing the previous library's pixels.
+    """
+    import hashlib
+
+    return hashlib.sha1(str(lib.root).encode("utf-8")).hexdigest()[:10]
+
+
 # Decoding HEIC is CPU-heavy, and the browser requests dozens of thumbnails at
 # once. A small semaphore keeps a 24MP decode from starving every other
 # request, while still using several cores.
@@ -143,6 +156,7 @@ async def open_library(request: Request) -> dict:
     return {
         "path": str(lib.root),
         "name": lib.root.name.replace(".photoslibrary", ""),
+        "token": _library_token(lib),
         "stats": lib.stats(),
         "warnings": lib.warnings,
         "albums": [a.to_dict() for a in lib.albums.values()],
@@ -190,6 +204,7 @@ def library_info() -> dict:
     return {
         "path": str(lib.root),
         "name": lib.root.name.replace(".photoslibrary", ""),
+        "token": _library_token(lib),
         "stats": lib.stats(),
         "warnings": lib.warnings,
         "albums": [a.to_dict() for a in lib.albums.values()],
