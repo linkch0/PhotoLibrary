@@ -87,6 +87,42 @@ function el(tag, cls, text) {
 
 /* ---------------------------------------------------------- library UI */
 
+/**
+ * Switch the UI to a library. All per-library state is reset here so nothing
+ * from the previous library leaks in and blanks the new one - a stale year or
+ * search term would filter the new library down to zero items.
+ */
+async function applyLibrary(info) {
+  state.lib = info;
+  state.query = '';
+  state.year = '';
+  state.albumId = null;
+  state.view = 'all';
+  state.items = [];
+  state.total = 0;
+  state.offset = 0;
+  state.done = false;
+  state.loading = false;
+  state.timeline = {};
+  state.lastMonth = '';
+  state.viewerIndex = -1;
+  closeViewer();
+
+  // Clear the controls that carried the old library's filters.
+  $('#search').value = '';
+  $('#grid').innerHTML = '';
+
+  $('#libName').textContent = info.name;
+  $('#dropzone').classList.add('hidden');
+  $('#scroller').classList.remove('hidden');
+
+  renderSidebar(info);
+  renderYears(info.stats.years || {}, false);
+  (info.warnings || []).forEach((w) => toast(w, true));
+
+  await setView('all');
+}
+
 async function openLibrary(path) {
   toast('Opening library…');
   try {
@@ -96,14 +132,7 @@ async function openLibrary(path) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    state.lib = info;
-    $('#libName').textContent = info.name;
-    $('#dropzone').classList.add('hidden');
-    $('#scroller').classList.remove('hidden');
-    renderSidebar(info);
-    renderYears(info.stats.years || {});
-    (info.warnings || []).forEach((w) => toast(w, true));
-    setView('all');
+    await applyLibrary(info);
     toast(`${info.stats.visible} items loaded`);
   } catch (err) {
     toast(err.message, true);
@@ -150,16 +179,22 @@ function renderSidebar(info) {
   });
 }
 
-function renderYears(years) {
+function renderYears(years, keepSelection = true) {
   const sel = $('#year');
-  const cur = sel.value;
+  const cur = keepSelection ? sel.value : '';
   sel.innerHTML = '<option value="">All years</option>';
   Object.keys(years).forEach((y) => {
     const o = el('option', null, `${y} (${years[y]})`);
     o.value = y;
     sel.appendChild(o);
   });
-  sel.value = cur;
+  // A year from the previous library may not exist here; fall back to "all".
+  if (cur && years && Object.prototype.hasOwnProperty.call(years, cur)) {
+    sel.value = cur;
+  } else {
+    sel.value = '';
+  }
+  return sel.value;
 }
 
 /* ------------------------------------------------------------- browsing */
@@ -602,14 +637,7 @@ async function step(delta) {
 async function adoptOpenLibrary() {
   // The launcher may have opened a library before the browser connected.
   const info = await api('/api/library');
-  state.lib = info;
-  $('#libName').textContent = info.name;
-  $('#dropzone').classList.add('hidden');
-  $('#scroller').classList.remove('hidden');
-  renderSidebar(info);
-  renderYears(info.stats.years || {});
-  (info.warnings || []).forEach((w) => toast(w, true));
-  await setView('all');
+  await applyLibrary(info);
 }
 
 (async function init() {
