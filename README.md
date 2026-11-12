@@ -1,5 +1,11 @@
 # Mac Photos Library Reader (Windows)
 
+> **This project is fully developed by AI.** Every line of code, tests, and
+> documentation was written by an AI agent (Hermes Agent, running a
+> DeepSeek-V4.1-Flash model) through conversational direction, including the
+> debugging and fixes. It has not been reviewed line-by-line by a human, so
+> treat it accordingly — inspect before relying on it for anything critical.
+
 Browse a `.photoslibrary` that was copied off a Mac — on Windows, without a Mac
 and without iTunes, iCloud, or the Photos app.
 
@@ -233,3 +239,23 @@ files.
 `test_all_libraries.py` opens every library found on disk and checks that each
 produces assets, dates, a thumbnail and a preview. Last run: 12/12 libraries,
 12,119 assets, 0 failures, slowest open 0.58s.
+
+---
+
+## Provenance and disclaimer
+
+This codebase was **fully developed by AI** — including the tests that back the
+claims above. That matters for how you read the rest of this document: the
+numbers are from real runs, but the design and its review came from a model, not
+a person.
+
+What that means in practice:
+
+- **It has not had a human line-by-line review.** Read the code before trusting
+  it with anything you care about.
+- **It is read-only by design**, and `tools/verify_readonly.py` exists to prove
+  that against your own library — run it rather than taking the claim on trust.
+- **No warranty of any kind.** Use at your own risk; keep backups of any library
+  you point it at, as you would with any third-party tool.
+- **No license is declared yet.** Without one, the code is technically "all
+  rights reserved" — readable, not reusable.
