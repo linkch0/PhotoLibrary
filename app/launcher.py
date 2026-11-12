@@ -61,20 +61,27 @@ def _clear_port_file(port: int | None = None) -> None:
         pass
 
 
-def _running_instance(preferred: int) -> int | None:
-    """Port of a Photos reader that is already up, whether or not it is on the
-    preferred port.
+def _running_instance(preferred: int, honor_preferred_only: bool = False) -> int | None:
+    """Port of a Photos reader that is already up.
 
-    A first launch can land on a random port when the preferred one is busy;
-    the port file is what lets a second launch find it instead of starting a
-    rival copy on yet another port.
+    ``honor_preferred_only`` is used when the caller passed ``--port``
+    explicitly: in that case a running instance on some other port is not an
+    answer, because the caller deliberately asked for a specific one.
+
+    Otherwise a first launch may have landed on a random port because the
+    preferred one was busy, and the port file is what lets a second launch find
+    it instead of starting a rival copy on yet another port.
 
     A stale file left behind by a hard kill is harmless: every candidate is
     health-checked before use, so a dead port is simply skipped.
     """
-    for port in (preferred, _read_port_file()):
-        if port and _already_serving(port):
-            return port
+    if _already_serving(preferred):
+        return preferred
+    if honor_preferred_only:
+        return None
+    fallback = _read_port_file()
+    if fallback and fallback != preferred and _already_serving(fallback):
+        return fallback
     return None
 
 
@@ -143,16 +150,23 @@ def auto_library() -> str | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Browse a macOS Photos library on Windows.")
     parser.add_argument("library", nargs="?", help="path to a .photoslibrary folder")
-    parser.add_argument("--port", type=int, default=8760)
+    # Sentinel default so we can tell an explicit --port from the built-in one.
+    parser.add_argument("--port", type=int, default=None,
+                        help="port to listen on (default: 8760)")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args(argv)
 
+    port_was_explicit = args.port is not None
+    if args.port is None:
+        args.port = 8760
+
     config.ensure_dirs()
 
-    # A second launch should focus the app that is already running - including
-    # one that landed on a random port - rather than start an isolated copy.
-    running = _running_instance(args.port)
+    # A second launch should focus the app that is already running rather than
+    # start an isolated copy. If the caller named a port explicitly, only that
+    # port counts - silently redirecting a requested port would be wrong.
+    running = _running_instance(args.port, honor_preferred_only=port_was_explicit)
     if running:
         print(f"A Photos reader is already running at http://{args.host}:{running}/")
         if not args.no_browser:

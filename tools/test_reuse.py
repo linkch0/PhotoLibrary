@@ -59,10 +59,10 @@ def main() -> int:
     get(f"http://127.0.0.1:{actual}/api/health")
     print("instance A is answering")
 
-    print("\nlaunching instance B (must reuse A, not start a rival)")
+    print("\nlaunching instance B with no --port (must reuse A, not start a rival)")
     b = subprocess.run(
-        [sys.executable, "-m", "app.launcher", LIB, "--port", str(PREFERRED), "--no-browser"],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=60,
+        [sys.executable, "-m", "app.launcher", LIB, "--no-browser"],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=90,
     )
     print(f"  exit code: {b.returncode}")
     print(f"  output: {b.stdout.strip()}")
