@@ -52,6 +52,24 @@ was busy — the running port is recorded in
 Requirements: Windows 10/11 and Python 3.10+. `ffmpeg` on `PATH` is needed only
 to play videos (see below).
 
+### AI features (optional)
+
+Semantic search and the image picker need extra packages (~1 GB, torch CPU):
+
+```bat
+.venv\Scripts\python.exe -m pip install -r requirements-ai.txt
+```
+
+Then open a library and press **Build index** in the sidebar. Indexing is
+opt-in, runs in the background, is cancellable, and is resumable — it only
+processes photos that are not already indexed. Budget roughly 0.3 s per photo on
+CPU (a 2,300-photo library took about 8 minutes).
+
+**Nothing is written into the `.photoslibrary`.** Embeddings are stored in
+`%LOCALAPPDATA%\MacPhotosReader\libs\<hash>\embeddings\` and can be deleted at
+any time; the library itself is untouched, as `tools/verify_readonly.py`
+confirms.
+
 ---
 
 ## What it reads
@@ -115,6 +133,73 @@ probed rather than assumed, and album join tables are discovered by name.
 - **Search** across filenames, titles, camera, lens, and timezone.
 - **Filters**: favourites, videos, Live Photos, screenshots, year.
 - **Export** copies originals out with their real names, never overwriting.
+
+---
+
+## AI: search and the image picker
+
+Two independent features, both opt-in per library, both built on the same
+per-library index in the app cache.
+
+### 1. Search by content
+
+Given a sentence, returns the photos that look most like it. Uses CLIP
+(ViT-B-32, `laion2b_s34b_b79k`): each photo and each query becomes a 512-d
+vector, and results are ranked by cosine similarity. No labels, no training.
+
+**Read the score as a ranking, not a confidence.** CLIP always returns its
+nearest neighbours, even when the concept is absent, and a look-alike can beat a
+true match. Measured on a real library:
+
+| query | top score | actually correct? |
+|---|---|---|
+| "fireworks at night" | 0.291 | yes — fireworks |
+| "a castle" | 0.243 | yes — the castle |
+| "a person" | 0.191 | yes |
+| "a cat" (no cats present) | 0.242 | no — a pink fox mascot with pointed ears |
+
+Because those ranges overlap, no fixed cutoff separates "present" from "absent",
+so the UI shows the score and says lower scores may be look-alikes rather than
+pretending to know.
+
+### 2. Image picker
+
+Ranks photos by how likely a person would keep them, and highlights the top
+ones. Works on scenes and portraits.
+
+| signal | what it measures | weight (scene / portrait) |
+|---|---|---|
+| sharpness | variance of the Laplacian, log-scaled to the measured range | 0.34 / 0.34 |
+| exposure | distance of mean luminance from mid-grey | 0.20 / 0.18 |
+| contrast | standard deviation of luminance | 0.14 / 0.10 |
+| colorfulness | Hasler–Süsstrunk colourfulness metric | 0.12 / 0.08 |
+| aesthetic | CLIP similarity, positive vs negative photo prompts | 0.20 / 0.20 |
+| portrait-ness | CLIP similarity, portrait vs scene prompts | — / 0.10 |
+
+The weights are a judgement call, not the output of a trained model. What was
+calibrated against real data is the *normalisation*, because the first attempt
+was quietly useless:
+
+- **Sharpness saturated.** The original divisor put the median sharp photo at
+  exactly 1.0, so a blurry shot and a tack-sharp one both scored full marks.
+  Measured on real photos (p05 = 265, p50 = 1613, p95 = 3600 Laplacian
+  variance; a deliberately blurred copy landed at 795), the curve is now keyed
+  to that range, giving 0.22 for the softest real photo and 0.73 for the median.
+- **The aesthetic term was dead.** On score-only runs no image vector was
+  computed, so it contributed a flat 0.5 for every photo. It now varies
+  (0.24–0.59 across a sample).
+- **Portrait detection was wrong, then replaced.** A Haar cascade was the first
+  choice; it detects any large round face, so on a library containing costumed
+  characters it flagged 9 stage/mascot photos as portraits and missed every real
+  portrait — 9/9 false positives, confirmed by looking at them. It is replaced
+  by CLIP prompt similarity, whose top 10 were verified visually as 10/10
+  genuine portraits of people. The old cascade remains in `scene.py` marked as
+  unused rather than deleted, so the reason is auditable.
+
+Scores are additive heuristics, so treat the ranking as a strong hint, not a
+verdict: the "highest scoring" photos are usually sharp, well-exposed and
+clearly composed, but the picker has no notion of *which* of four near-identical
+burst frames is the best expression.
 
 ---
 
@@ -195,6 +280,13 @@ The UI is a thin client over a JSON API — useful for scripting:
 | `GET /api/original/{id}?download=true` | The untouched original |
 | `GET /api/timeline` | Year/month counts |
 | `POST /api/export` | `{"dest": "...", "kind": "all"}` |
+| `GET /api/ai/status` | AI availability + index state for the open library |
+| `POST /api/ai/index` | Start building embeddings (`{"scoreOnly": false, "limit": null}`) |
+| `GET /api/ai/job` | Progress of the running index job |
+| `POST /api/ai/cancel` | Stop the job (resumable) |
+| `DELETE /api/ai/index` | Delete this library's embeddings from the app cache |
+| `GET /api/ai/search?q=…` | Natural-language search over photo content |
+| `GET /api/ai/picks?portrait_only=` | Photos ranked by picker score |
 
 Interactive docs at `http://127.0.0.1:8760/docs` while running.
 
@@ -222,6 +314,8 @@ Verification scripts, all run against real libraries:
 .venv\Scripts\python.exe tools\test_reuse.py "<library>"              REM second launch reuses first
 .venv\Scripts\python.exe tools\test_portfile_cleanup.py               REM stale port file recovery
 .venv\Scripts\python.exe tools\test_runbat.py "<library>"             REM end-to-end launcher check
+.venv\Scripts\python.exe tools\test_portrait.py "<library>"           REM portrait classifier sanity
+.venv\Scripts\python.exe tools\test_scoring.py "<library>"            REM picker score calibration
 .venv\Scripts\python.exe tools\make_fixture.py "<src>" "<dst>"        REM builds an album fixture
 ```
 

@@ -1,0 +1,10 @@
+# AI extras: semantic search + image picker scoring.
+# Kept separate from requirements.txt so the core viewer stays lean
+# (~40 MB instead of ~1 GB) and works without torch.
+torch>=2.0
+torchvision>=0.15
+open-clip-torch>=2.20
+opencv-python-headless>=4.8,<5   # optional: enables portrait face detection
+# NOTE: cv2 5.x removed CascadeClassifier and the bundled Haar cascades, which
+# silently disabled portrait detection. Keep this below 5 until the code is
+# ported to FaceDetectorYN.

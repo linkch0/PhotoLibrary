@@ -21,6 +21,7 @@ const state = {
   viewerIndex: -1,
   timeline: {},
   lastMonth: '',
+  aiQuery: '',
 };
 
 const PAGE = 300;
@@ -135,6 +136,7 @@ async function applyLibrary(info) {
   (info.warnings || []).forEach((w) => toast(w, true));
 
   await setView('all');
+  refreshAiBox();
 }
 
 async function openLibrary(path) {
@@ -223,6 +225,9 @@ function setView(view) {
   const titles = {
     all: 'All Photos', favorite: 'Favorites', video: 'Videos',
     live: 'Live Photos', screenshot: 'Screenshots',
+    'ai-search': 'Search by content',
+    'ai-picks': 'Best picks',
+    'ai-portrait': 'Best portraits',
   };
   if (state.albumId) {
     const alb = (state.lib.albums || []).find((a) => a.id === state.albumId);
@@ -230,6 +235,11 @@ function setView(view) {
   } else {
     $('#title').textContent = titles[view] || 'Photos';
   }
+
+  const isAi = view.startsWith('ai-');
+  $('#aiBar').classList.toggle('hidden', view !== 'ai-search');
+  if (view === 'ai-search') $('#aiQuery').focus();
+
   reload();
 }
 
@@ -258,8 +268,86 @@ async function reload() {
   state.lastMonth = '';
   $('#grid').innerHTML = '';
   $('#empty').classList.add('hidden');
+
+  if (state.view.startsWith('ai-')) {
+    await loadAi();
+    return;
+  }
   await loadMore(true);
   await loadTimeline();
+}
+
+/* ------------------------------------------------------------ AI views */
+
+async function loadAi() {
+  const grid = $('#grid');
+  $('#subtitle').textContent = '';
+  $('#aiHint').textContent = '';
+
+  const status = await api('/api/ai/status').catch(() => null);
+  if (!status || !status.available || !status.available.clip) {
+    showEmpty('The AI extras are not installed. Run: pip install -r requirements-ai.txt');
+    return;
+  }
+
+  const indexed = status.index && status.index.count > 0;
+  if (!indexed) {
+    showEmpty('No index for this library yet. Use “Build index” in the sidebar — '
+      + 'it is a one-time pass and writes nothing into the library.');
+    return;
+  }
+
+  if (state.view === 'ai-search') {
+    const q = state.aiQuery.trim();
+    if (!q) {
+      showEmpty('Type a description above to search the photo contents.');
+      return;
+    }
+    $('#aiHint').textContent = 'searching…';
+    let data;
+    try {
+      data = await api(`/api/ai/search?q=${encodeURIComponent(q)}&limit=200`);
+    } catch (err) {
+      showEmpty(err.message);
+      $('#aiHint').textContent = '';
+      return;
+    }
+    state.items = data.items;
+    state.done = true;
+    renderTiles(data.items, { scores: true });
+    $('#subtitle').textContent = `${data.count} result${data.count === 1 ? '' : 's'} for “${q}”`;
+    // The score is a ranking signal, not a confidence: CLIP will still return
+    // look-alikes for a concept the library does not contain.
+    const best = data.items.length ? data.items[0].score : 0;
+    $('#aiHint').textContent = data.count
+      ? `best match ${(best * 100).toFixed(0)}/100 · lower scores may be look-alikes`
+      : 'nothing scored above the threshold';
+    $('#empty').classList.toggle('hidden', data.count > 0);
+    return;
+  }
+
+  // Best picks / best portraits
+  const portrait = state.view === 'ai-portrait';
+  let data;
+  try {
+    data = await api(`/api/ai/picks?limit=300${portrait ? '&portrait_only=true' : ''}`);
+  } catch (err) {
+    showEmpty(err.message);
+    return;
+  }
+  state.items = data.items;
+  state.done = true;
+  renderTiles(data.items, { scores: true, picks: true });
+  $('#subtitle').textContent =
+    `${data.count} of ${data.total} scored${portrait ? ' · portraits' : ''}`;
+  $('#empty').classList.toggle('hidden', data.count > 0);
+}
+
+function showEmpty(msg) {
+  const el0 = $('#empty');
+  el0.textContent = msg;
+  el0.classList.remove('hidden');
+  $('#subtitle').textContent = '';
 }
 
 async function loadTimeline() {
@@ -351,22 +439,33 @@ async function loadMore(reset) {
 }
 
 function appendTiles(items, startIndex) {
+  renderTiles(items, { offset: startIndex });
+}
+
+function renderTiles(items, opts) {
+  const { offset = 0, scores = false, picks = false } = opts || {};
   const grid = $('#grid');
   const frag = document.createDocumentFragment();
   items.forEach((it, i) => {
-    const globalIndex = startIndex + i;
+    const globalIndex = offset + i;
 
     // Photos groups by month; emit a sticky heading whenever the month changes.
-    const monthKey = it.date ? it.date.slice(0, 7) : '';
-    if (monthKey && monthKey !== state.lastMonth) {
-      state.lastMonth = monthKey;
-      frag.appendChild(monthHeading(it.date));
+    // AI result lists are ranked, so headings would be meaningless there.
+    if (!scores) {
+      const monthKey = it.date ? it.date.slice(0, 7) : '';
+      if (monthKey && monthKey !== state.lastMonth) {
+        state.lastMonth = monthKey;
+        frag.appendChild(monthHeading(it.date));
+      }
     }
 
     const tile = el('div', 'tile');
     tile.dataset.index = globalIndex;
     tile.dataset.date = it.date || '';
     tile.title = `${it.name}\n${fmtDate(it.date)}`;
+    if (picks && typeof it.score === 'number' && it.score >= 0.75) {
+      tile.classList.add('pick-top');
+    }
 
     const img = document.createElement('img');
     img.loading = 'lazy';
@@ -377,11 +476,16 @@ function appendTiles(items, startIndex) {
     img.addEventListener('error', () => img.classList.add('loaded'), { once: true });
     tile.appendChild(img);
 
+    if (scores && typeof it.score === 'number') {
+      const s = el('div', 'score' + (it.score >= 0.7 ? ' hi' : ''),
+                   Math.round(it.score * 100));
+      s.title = `AI score ${(it.score * 100).toFixed(0)}/100`;
+      tile.appendChild(s);
+    }
+
     const badges = [];
     if (it.kind === 'live') badges.push('<span class="live-dot">◉</span>');
-    if (it.kind === 'video') {
-      badges.push('<span>▶</span>');
-    }
+    if (it.kind === 'video') badges.push('<span>▶</span>');
     if (badges.length) {
       const b = el('div', 'badges');
       b.innerHTML = badges.join('');
@@ -550,6 +654,74 @@ function renderInfo(d) {
   info.appendChild(actions);
 }
 
+/* --------------------------------------------------------- AI index box */
+
+async function refreshAiBox() {
+  const box = $('#aiIndexBox');
+  if (!state.lib) { box.innerHTML = ''; return; }
+  let st;
+  try {
+    st = await api('/api/ai/status');
+  } catch (_) {
+    box.innerHTML = '';
+    return;
+  }
+
+  if (!st.available || !st.available.clip) {
+    box.innerHTML = '<div class="ai-index-note">AI extras not installed.<br>'
+      + '<code>pip install -r requirements-ai.txt</code></div>';
+    return;
+  }
+
+  const idx = st.index || { count: 0, scored: 0 };
+  const job = st.job;
+
+  if (job && job.state === 'running') {
+    box.innerHTML = `
+      <div class="ai-index-note">Indexing ${job.done}/${job.total} · ${job.percent}%${
+        job.eta ? ` · ~${Math.ceil(job.eta / 60)} min left` : ''}</div>
+      <div class="ai-progress"><i style="width:${job.percent}%"></i></div>
+      <button class="ai-index-btn" id="aiCancelBtn" type="button">Cancel</button>`;
+    $('#aiCancelBtn').addEventListener('click', async () => {
+      await api('/api/ai/cancel', { method: 'POST' }).catch(() => {});
+      refreshAiBox();
+    });
+    clearTimeout(refreshAiBox._t);
+    refreshAiBox._t = setTimeout(refreshAiBox, 1500);
+    return;
+  }
+
+  if (idx.count > 0) {
+    const mb = idx.sizeBytes ? (idx.sizeBytes / 1048576).toFixed(1) : '0';
+    box.innerHTML = `
+      <div class="ai-index-note">${idx.count} photos indexed · ${idx.scored} scored<br>
+        ${mb} MB in app cache · model ${idx.model || '?'}</div>
+      <button class="ai-index-btn" id="aiRescanBtn" type="button">Update index</button>`;
+    $('#aiRescanBtn').addEventListener('click', startIndex);
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="ai-index-note">Enable search and picks by indexing this library once.
+      Nothing is written inside the library.</div>
+    <button class="ai-index-btn primary" id="aiBuildBtn" type="button">Build index</button>`;
+  $('#aiBuildBtn').addEventListener('click', startIndex);
+}
+
+async function startIndex() {
+  try {
+    const r = await api('/api/ai/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (r.started) toast('Indexing started — you can keep browsing.');
+    refreshAiBox();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 /* --------------------------------------------------------------- events */
 
 function wire() {
@@ -572,6 +744,20 @@ function wire() {
       state.query = e.target.value.trim();
       reload();
     }, 220);
+  });
+
+  // AI content search runs on submit / button, not on every keystroke: each
+  // query costs a CLIP text encoding plus a full similarity pass.
+  const runAiSearch = () => {
+    const q = $('#aiQuery').value.trim();
+    if (!q) { showEmpty('Type a description above to search the photo contents.'); return; }
+    state.aiQuery = q;
+    if (state.view !== 'ai-search') setView('ai-search');
+    else loadAi();
+  };
+  $('#aiGo').addEventListener('click', runAiSearch);
+  $('#aiQuery').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); runAiSearch(); }
   });
 
   $('#sort').addEventListener('change', (e) => {

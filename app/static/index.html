@@ -39,6 +39,20 @@
         </a>
       </div>
 
+      <div class="nav-group">
+        <div class="nav-label">AI</div>
+        <a class="nav-item" data-view="ai-search" href="#">
+          <span class="ico">✦</span> Search by content
+        </a>
+        <a class="nav-item" data-view="ai-picks" href="#">
+          <span class="ico">★</span> Best picks
+        </a>
+        <a class="nav-item" data-view="ai-portrait" href="#">
+          <span class="ico">☺</span> Best portraits
+        </a>
+        <div id="aiIndexBox" class="ai-index-box"></div>
+      </div>
+
       <div class="nav-group" id="albumGroup">
         <div class="nav-label">Albums</div>
         <div id="albumList" class="album-list"></div>
@@ -93,6 +107,11 @@
     </div>
 
     <div id="scroller" class="scroller hidden">
+      <div id="aiBar" class="ai-bar hidden">
+        <input id="aiQuery" type="search" placeholder="Describe what you're looking for — e.g. fireworks at night" autocomplete="off" />
+        <button id="aiGo" class="primary" type="button">Search</button>
+        <span id="aiHint" class="ai-hint"></span>
+      </div>
       <div id="grid" class="grid"></div>
       <div id="sentinel" class="sentinel"></div>
       <div id="empty" class="empty hidden">Nothing here.</div>
