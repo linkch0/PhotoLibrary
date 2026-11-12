@@ -693,7 +693,11 @@ async function refreshAiBox() {
 
   if (idx.count > 0) {
     const mb = idx.sizeBytes ? (idx.sizeBytes / 1048576).toFixed(1) : '0';
+    const warn = (job && job.state === 'done_with_errors' && job.failed)
+      ? `<div class="ai-index-note" style="color:#ffb3bb">${job.failed} photo${job.failed === 1 ? '' : 's'} could not be read</div>`
+      : '';
     box.innerHTML = `
+      ${warn}
       <div class="ai-index-note">${idx.count} photos indexed · ${idx.scored} scored<br>
         ${mb} MB in app cache · model ${idx.model || '?'}</div>
       <button class="ai-index-btn" id="aiRescanBtn" type="button">Update index</button>`;

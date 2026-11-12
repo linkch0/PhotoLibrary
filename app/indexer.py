@@ -218,6 +218,12 @@ class Indexer:
                 job.state = "done"
                 job.message = (f"indexed {len(state.rows)} photos, "
                                f"scored {len(scored)}")
+                # A run that silently dropped most of its files is not a clean
+                # success. Surface it, or a library where every HEIC failed
+                # looks indexed when it is nearly empty.
+                if job.failed:
+                    job.state = "done_with_errors"
+                    job.message += f", {job.failed} could not be read"
         except Exception as exc:  # keep the UI informed instead of dying silently
             job.state = "error"
             job.error = f"{type(exc).__name__}: {exc}"
