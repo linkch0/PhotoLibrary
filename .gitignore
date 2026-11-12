@@ -1,0 +1,12 @@
+# Virtualenv and dependencies
+.venv/
+__pycache__/
+*.py[cod]
+
+# Test artifacts
+tools/all_libraries.json
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store

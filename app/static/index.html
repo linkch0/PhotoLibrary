@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Photos Library</title>
+<link rel="stylesheet" href="/style.css?v=1" />
+</head>
+<body>
+<div id="app">
+
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div class="brand-text">
+        <strong>Photos</strong>
+        <span id="libName">No library</span>
+      </div>
+    </div>
+
+    <button id="openBtn" class="open-btn" type="button">Open Library…</button>
+
+    <nav id="nav">
+      <div class="nav-group">
+        <a class="nav-item active" data-view="all" href="#">
+          <span class="ico">▦</span> All Photos <em id="cAll"></em>
+        </a>
+        <a class="nav-item" data-view="favorite" href="#">
+          <span class="ico">♥</span> Favorites <em id="cFav"></em>
+        </a>
+        <a class="nav-item" data-view="video" href="#">
+          <span class="ico">▶</span> Videos <em id="cVid"></em>
+        </a>
+        <a class="nav-item" data-view="live" href="#">
+          <span class="ico">◎</span> Live Photos <em id="cLive"></em>
+        </a>
+        <a class="nav-item" data-view="screenshot" href="#">
+          <span class="ico">▭</span> Screenshots <em id="cShot"></em>
+        </a>
+      </div>
+
+      <div class="nav-group" id="albumGroup">
+        <div class="nav-label">Albums</div>
+        <div id="albumList" class="album-list"></div>
+      </div>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div id="libStats" class="stats"></div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="topbar">
+      <div class="left">
+        <h1 id="title">All Photos</h1>
+        <span id="subtitle" class="subtitle"></span>
+      </div>
+      <div class="right">
+        <div class="search-wrap">
+          <input id="search" type="search" placeholder="Search names, cameras, places…" autocomplete="off" />
+          <kbd>/</kbd>
+        </div>
+        <select id="sort" title="Sort order">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="added">Recently added</option>
+          <option value="name">Filename</option>
+          <option value="size">Largest</option>
+        </select>
+        <div class="seg" id="zoom">
+          <button type="button" data-size="xs" title="Small thumbnails">▪</button>
+          <button type="button" data-size="s" class="on" title="Medium thumbnails">▫</button>
+          <button type="button" data-size="m" title="Large thumbnails">◻</button>
+          <button type="button" data-size="l" title="Extra large">◼</button>
+        </div>
+        <select id="year" title="Filter by year"><option value="">All years</option></select>
+      </div>
+    </header>
+
+    <div id="dropzone" class="dropzone hidden">
+      <div class="dz-inner">
+        <div class="dz-icon">◈</div>
+        <h2>Open a Photos Library</h2>
+        <p>Choose a <code>.photoslibrary</code> folder copied from a Mac.
+           Nothing inside it is ever modified.</p>
+        <button id="openBtn2" class="primary" type="button">Choose folder…</button>
+        <div id="recentWrap" class="recent hidden">
+          <div class="nav-label">Recent</div>
+          <div id="recentList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="scroller" class="scroller hidden">
+      <div id="grid" class="grid"></div>
+      <div id="sentinel" class="sentinel"></div>
+      <div id="empty" class="empty hidden">Nothing here.</div>
+    </div>
+    <div id="scrubber" class="scrubber hidden"></div>
+
+    <div id="status" class="statusbar hidden"></div>
+  </main>
+</div>
+
+<div id="viewer" class="viewer hidden">
+  <div class="viewer-bg"></div>
+  <div class="viewer-body">
+    <button class="vbtn close" id="vClose" title="Close (Esc)">✕</button>
+    <button class="vbtn prev" id="vPrev" title="Previous (←)">‹</button>
+    <button class="vbtn next" id="vNext" title="Next (→)">›</button>
+    <div class="stage" id="stage"></div>
+    <div class="info" id="info"></div>
+  </div>
+</div>
+
+<script src="/app.js?v=1"></script>
+</body>
+</html>
