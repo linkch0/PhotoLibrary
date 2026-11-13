@@ -5,12 +5,6 @@ __pycache__/
 
 # Test artifacts
 tools/all_libraries.json
-tools/*_sheet.jpg
-tools/*_small.jpg
-tools/*_tiny.jpg
-tools/_sharp.jpg
-tools/_blur.jpg
-tools/_face.png
 
 # OS noise
 Thumbs.db

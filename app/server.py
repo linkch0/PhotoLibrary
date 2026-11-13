@@ -18,8 +18,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import config, media, scene, semantic
-from .indexer import Indexer
+from . import config, media
 from .library import Album, Asset, LibraryError, PhotosLibrary
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -29,17 +28,6 @@ app = FastAPI(title="Mac Photos Library Reader", version="1.0.0")
 _state_lock = threading.Lock()
 _lib: PhotosLibrary | None = None
 _recent: list[str] = []
-_index: semantic.SemanticIndex | None = None
-_indexer = Indexer()
-
-
-def get_index() -> semantic.SemanticIndex:
-    """The embedding index for the currently open library."""
-    global _index
-    lib = get_library()
-    if _index is None or Path(_index.root) != lib.root:
-        _index = semantic.SemanticIndex(lib.root)
-    return _index
 
 
 # --------------------------------------------------------------- helpers
@@ -438,148 +426,6 @@ def timeline(album: str | None = None) -> dict:
         m = f"{d.month:02d}"
         y[m] = y.get(m, 0) + 1
     return {"years": {y: dict(sorted(m.items())) for y, m in sorted(buckets.items(), reverse=True)}}
-
-
-# ------------------------------------------------------------- AI features
-
-@app.get("/api/ai/status")
-def ai_status() -> dict:
-    """What the AI layer can do here, and the state of this library's index."""
-    out = {"available": scene.available(), "index": None, "job": _indexer.status()}
-    try:
-        idx = get_index()
-        out["exists"] = idx.exists()
-        out["hasScores"] = idx.has_scores()
-        st = idx.load()
-        out["index"] = {
-            "count": st.count,
-            "model": st.model,
-            "dim": st.dim,
-            "scored": len(st.scores),
-            "path": str(idx.dir),
-            "sizeBytes": sum(p.stat().st_size for p in
-                             (idx.meta_path, idx.vectors_path, idx.scores_path)
-                             if p.is_file()),
-        }
-    except HTTPException:
-        out["exists"] = False
-    return out
-
-
-@app.post("/api/ai/index")
-async def ai_build(request: Request) -> dict:
-    """Start building embeddings for the open library (opt-in, cancellable).
-
-    The index is written to the app cache, never inside the library.
-    """
-    lib = get_library()
-    if not scene.available()["clip"]:
-        raise HTTPException(
-            400,
-            "CLIP is unavailable. Install the AI extras: "
-            "pip install -r requirements-ai.txt",
-        )
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    body = body or {}
-    idx = get_index()
-    job = _indexer.start(
-        lib, idx,
-        score_only=bool(body.get("scoreOnly")),
-        limit=int(body["limit"]) if body.get("limit") else None,
-    )
-    return {"started": True, "job": job.to_dict()}
-
-
-@app.get("/api/ai/job")
-def ai_job() -> dict:
-    return {"job": _indexer.status()}
-
-
-@app.post("/api/ai/cancel")
-def ai_cancel() -> dict:
-    return {"cancelled": _indexer.cancel()}
-
-
-@app.delete("/api/ai/index")
-def ai_delete() -> dict:
-    idx = get_index()
-    idx.clear()
-    return {"deleted": True}
-
-
-@app.get("/api/ai/search")
-def ai_search(q: str, limit: int = Query(120, ge=1, le=500),
-              threshold: float = Query(0.0, ge=-1.0, le=1.0)) -> dict:
-    """Natural-language search over photo content.
-
-    Note on the score: CLIP returns nearest neighbours even when nothing in the
-    library matches, and a look-alike can outscore a true match (a fox mascot
-    with pointed ears scored 0.242 for "a cat" while "a person" scored 0.191).
-    The score is therefore a *relative* ranking signal, not a confidence that
-    the concept is present; callers should surface it rather than hide it.
-    """
-    lib = get_library()
-    idx = get_index()
-    st = idx.load()
-    if st.count == 0:
-        raise HTTPException(409, "This library has no index yet. Build it first.")
-    vec = scene.embed_text(q)
-    if vec is None:
-        raise HTTPException(400, "Could not encode that query.")
-
-    hits = idx.search(vec, limit=limit, threshold=threshold)
-    # Map UUIDs back to the library's current ids (they are stable per library).
-    items = []
-    for h in hits:
-        asset = next((a for a in lib.assets if a.uuid == h["uuid"]), None)
-        if asset is None or asset.trashed:
-            continue
-        d = asset.to_dict()
-        d["score"] = round(h["score"], 4)
-        items.append(d)
-    return {"query": q, "count": len(items), "items": items}
-
-
-@app.get("/api/ai/picks")
-def ai_picks(album: str | None = None, kind: str = "all",
-             limit: int = Query(200, ge=1, le=2000),
-             portrait_only: bool = False) -> dict:
-    """Photos ranked by how likely a person would keep them."""
-    lib = get_library()
-    idx = get_index()
-    st = idx.load()
-    if not st.scores:
-        raise HTTPException(409, "This library has no scores yet. Build the index first.")
-
-    albums = _split_ids(album)
-    if albums:
-        allowed: set[int] = set()
-        for a in albums:
-            allowed |= lib.album_asset_ids(a)
-        pool = [lib.by_id[i] for i in allowed if i in lib.by_id]
-    else:
-        pool = list(lib.assets)
-    pool = [a for a in pool if not a.trashed and a.uuid in st.scores]
-
-    if kind != "all":
-        pool = [a for a in pool if _matches(a, kind=kind, query="", year="")]
-    if portrait_only:
-        pool = [a for a in pool if (st.scores.get(a.uuid) or {}).get("portrait")]
-
-    def score_of(a: Asset) -> float:
-        return float((st.scores.get(a.uuid) or {}).get("score") or 0.0)
-
-    pool.sort(key=score_of, reverse=True)
-    page = pool[:limit]
-    items = []
-    for a in page:
-        d = a.to_dict()
-        d.update(st.scores.get(a.uuid) or {})
-        items.append(d)
-    return {"count": len(items), "total": len(pool), "items": items}
 
 
 # ------------------------------------------------------------ static app
